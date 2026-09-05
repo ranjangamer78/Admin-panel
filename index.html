@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TaskEarn Advanced Admin</title>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <style>
+        :root { --bg: #12101E; --surface: #1E1B2E; --primary: #7B3FE4; --accent: #F4B400; --text: #fff; --text-muted: #A09DB0; --danger: #F44336; --success: #00BFA5; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); display: flex; height: 100vh; }
+        #sidebar { width: 250px; background: rgba(30,27,46,0.9); border-right: 1px solid rgba(255,255,255,0.1); padding: 20px 0; display: flex; flex-direction: column; overflow-y: auto; }
+        .brand { font-size: 24px; font-weight: bold; text-align: center; margin-bottom: 30px; color: var(--accent); }
+        .nav-item { padding: 15px 20px; cursor: pointer; transition: all 0.3s; border-left: 4px solid transparent; }
+        .nav-item:hover, .nav-item.active { background: rgba(123,63,228,0.2); border-left: 4px solid var(--primary); color: var(--primary); }
+        #main-content { flex-grow: 1; padding: 30px; overflow-y: auto; }
+        .card { background: var(--surface); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 20px; margin-bottom: 20px; }
+        .grid-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: linear-gradient(135deg, var(--primary), #5B2FC2); border-radius: 16px; padding: 20px; }
+        .stat-card h3 { margin: 0; font-size: 14px; opacity: 0.9; }
+        .stat-card .value { font-size: 32px; font-weight: bold; margin-top: 10px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        th { color: var(--text-muted); font-weight: 500; font-size: 14px; }
+        button { background: var(--primary); color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        button.danger { background: var(--danger); }
+        button.success { background: var(--success); }
+        input, select, textarea { width: 100%; padding: 10px; margin-bottom: 15px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 8px; box-sizing: border-box; }
+        .hidden { display: none !important; }
+        .section { display: none; }
+        .section.active { display: block; }
+        .badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+        .badge.pending { background: #FF9800; color: black; }
+        .badge.approved { background: var(--success); color: white; }
+        .badge.rejected { background: var(--danger); color: white; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; color: var(--text-muted); }
+    </style>
+</head>
+<body>
+    <div id="auth-screen" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;">
+        <div class="card" style="width: 300px;">
+            <h2 style="text-align: center;">Admin Login</h2>
+            <input type="email" id="email" placeholder="Email">
+            <input type="password" id="password" placeholder="Password">
+            <button onclick="login()" style="width: 100%;">Login</button>
+            <button onclick="register()" style="width: 100%; background-color: #4CAF50; margin-top: 10px;">Register (First Time)</button>
+            <p id="auth-error" style="color: var(--danger); text-align: center; margin-top: 10px;"></p>
+        </div>
+    </div>
+
+    <div id="app-screen" class="hidden" style="width: 100%; display: flex;">
+        <div id="sidebar">
+            <div class="brand" style="display: flex; align-items: center; gap: 10px;">
+                <img src="logo.png" alt="TaskEarn" style="width: 32px; height: 32px; border-radius: 8px; object-fit: cover;">
+                <span>TaskEarn Admin</span>
+            </div>
+            <div class="nav-item active" onclick="switchTab('dashboard')">Dashboard</div>
+            <div class="nav-item" onclick="switchTab('users')">Users & Blocking</div>
+            <div class="nav-item" onclick="switchTab('withdrawals')">Withdrawals</div>
+            <div class="nav-item" onclick="switchTab('settings')">App Config</div>
+            <div class="nav-item" onclick="switchTab('banners')">Banners</div>
+            <div class="nav-item" onclick="switchTab('offers')">Custom Offers</div>
+            <div class="nav-item" onclick="switchTab('coupons')">🎫 Coupon Codes</div>
+            <div class="nav-item" onclick="switchTab('payment-methods')">Payment Methods</div>
+            <div class="nav-item" onclick="switchTab('notifications')">Push Notifications</div>
+            <div class="nav-item" onclick="logout()" style="margin-top: auto; color: var(--danger);">Logout</div>
+        </div>
+
+        <div id="main-content">
+            <!-- DASHBOARD -->
+            <div id="dashboard" class="section active">
+                <h2>Dashboard Overview</h2>
+                <div class="grid-cards">
+                    <div class="stat-card">
+                        <h3>Total Users</h3>
+                        <div class="value" id="stat-users">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Pending Withdrawals</h3>
+                        <div class="value" id="stat-pending">0</div>
+                    </div>
+                    <div class="stat-card" style="background: linear-gradient(135deg, var(--success), #009688);">
+                        <h3>Successful Withdrawals</h3>
+                        <div class="value" id="stat-success">0</div>
+                    </div>
+                    <div class="stat-card" style="background: linear-gradient(135deg, var(--accent), #FF9800);">
+                        <h3>Total Money Sent (₹)</h3>
+                        <div class="value" id="stat-money">0</div>
+                    </div>
+                    <div class="stat-card" style="background: linear-gradient(135deg, #7b1fa2, #ab47bc);">
+                        <h3>Active Coupons</h3>
+                        <div class="value" id="stat-coupons">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- USERS -->
+            <div id="users" class="section">
+                <h2>Manage Users</h2>
+                <div class="card" style="overflow-x: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Email/UID</th>
+                                <th>Name</th>
+                                <th>Balance</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- WITHDRAWALS -->
+            <div id="withdrawals" class="section">
+                <h2>Withdrawal Requests</h2>
+                <div class="card" style="overflow-x: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>User ID</th>
+                                <th>Method</th>
+                                <th>Details</th>
+                                <th>Coins</th>
+                                <th>Rupees</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="withdrawals-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            
+            <!-- BANNERS -->
+            <div id="banners" class="section">
+                <div class="header">
+                    <h2>Home Sliding Banners</h2>
+                    <button onclick="showBannerForm()">+ Add Banner</button>
+                </div>
+                <div id="banner-form" class="card hidden">
+                    <input type="text" id="banner-image" placeholder="Image URL">
+                    <input type="text" id="banner-link" placeholder="Target Link (Optional)">
+                    <div style="margin-top: 10px;">
+                        <button onclick="saveBanner()">Save Banner</button>
+                        <button class="danger" onclick="hideBannerForm()">Cancel</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <table>
+                        <thead>
+                            <tr><th>Image URL</th><th>Link</th><th>Actions</th></tr>
+                        </thead>
+                        <tbody id="banners-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- SETTINGS -->
+            <div id="settings" class="section">
+                <h2>App Configuration</h2>
+                <div class="card">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <div>
+                            <h3>Rewards & Limits</h3>
+                            <div class="form-group"><label>Daily Bonus Coins</label><input type="number" id="cfg-daily"></div>
+                            <div class="form-group"><label>Referral Reward (Referrer)</label><input type="number" id="cfg-ref-referrer"></div>
+                            <div class="form-group"><label>Referral Reward (Referee)</label><input type="number" id="cfg-ref-referee"></div>
+                            <div class="form-group"><label>Daily Streak Coins (Comma separated 7 values)</label><input type="text" id="cfg-streak" placeholder="10,20,30,40,50,60,100"></div>
+                            <div class="form-group"><label>Spin Wheel Reward</label><input type="number" id="cfg-spin-reward"></div>
+                            <div class="form-group"><label>Spin Wheel Daily Limit</label><input type="number" id="cfg-spin-limit"></div>
+                            <div class="form-group"><label>Scratch Card Reward</label><input type="number" id="cfg-scratch-reward"></div>
+                            <div class="form-group"><label>Scratch Card Daily Limit</label><input type="number" id="cfg-scratch-limit"></div>
+                            <div class="form-group"><label>Video Earn Reward</label><input type="number" id="cfg-video-reward"></div>
+                            <div class="form-group"><label>Video Earn Daily Limit</label><input type="number" id="cfg-video-limit"></div>
+                        </div>
+                        <div>
+                            <h3>General & Ads</h3>
+                            <div class="form-group"><label>Coin to Rupee Rate (Coins per ₹1)</label><input type="number" id="cfg-rate"></div>
+                            <div class="form-group"><label>Social: Telegram Link</label><input type="text" id="cfg-telegram"></div>
+                            <div class="form-group"><label>Social: YouTube Link</label><input type="text" id="cfg-youtube"></div>
+                            <div class="form-group"><label>Social: Instagram Link</label><input type="text" id="cfg-instagram"></div>
+                            
+                            
+                            
+                            <h4>Ad Networks</h4>
+                            <div class="form-group"><label><input type="checkbox" id="cfg-ads-enabled"> Enable All Ads</label></div>
+                            <div class="form-group"><label><input type="checkbox" id="cfg-unity-enabled"> Unity Ads</label></div>
+                            <div class="form-group"><label><input type="checkbox" id="cfg-admob-enabled"> AdMob Ads</label></div>
+                        </div>
+                    </div>
+                    <button onclick="saveSettings()" style="width: 100%; margin-top: 20px;">Save Configuration</button>
+                </div>
+            </div>
+
+            <!-- OFFERS -->
+            <div id="offers" class="section">
+                <div class="header">
+                    <h2>Custom Offers (YouTube / Web)</h2>
+                    <button onclick="showOfferForm()">+ Add Offer</button>
+                </div>
+                <div id="offer-form" class="card hidden">
+                    <input type="hidden" id="offer-id">
+                    <input type="text" id="offer-title" placeholder="Offer Title (e.g. Watch Video)">
+                    <input type="text" id="offer-desc" placeholder="Short Description">
+                    <input type="text" id="offer-url" placeholder="URL (YouTube or Website)">
+                    <input type="number" id="offer-reward" placeholder="Reward Coins">
+                    <input type="number" id="offer-timer" placeholder="Wait Time (Seconds)">
+                    <button onclick="saveOffer()">Save Offer</button>
+                    <button class="danger" onclick="hideOfferForm()">Cancel</button>
+                </div>
+                <div class="card">
+                    <table>
+                        <thead>
+                            <tr><th>Title</th><th>URL</th><th>Reward</th><th>Timer</th><th>Actions</th></tr>
+                        </thead>
+                        <tbody id="offers-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- PAYMENT METHODS & GIFT CARDS -->
+            <div id="payment-methods" class="section">
+                <div class="header">
+                    <h2>Withdrawal & Gift Cards</h2>
+                    <div>
+                        <button class="success" onclick="seedAllPaymentMethods()">⚡ Seed Default Gift Cards</button>
+                        <button onclick="showPaymentForm()">+ Add Custom Method</button>
+                    </div>
+                </div>
+
+                <!-- Quick Add Buttons for Requested Gift Cards -->
+                <div class="card" style="margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+                    <strong style="margin-right: 10px;">Quick Add Popular:</strong>
+                    <button style="background: #e65100; color: white;" onclick="quickAddGiftCard('free_fire')">💎 Free Fire Diamonds</button>
+                    <button style="background: #2e7d32; color: white;" onclick="quickAddGiftCard('robux')">🪙 Robux (Roblox)</button>
+                    <button style="background: #c2185b; color: white;" onclick="quickAddGiftCard('blox_fruits')">🍎 Blox Fruits</button>
+                    <button style="background: #0288d1; color: white;" onclick="quickAddGiftCard('google_play')">🎁 Google Play Code</button>
+                    <button style="background: #651FFF; color: white;" onclick="quickAddGiftCard('upi')">⚡ UPI Cash</button>
+                    <button style="background: #00bcd4; color: white;" onclick="quickAddGiftCard('paytm')">📱 Paytm Cash</button>
+                </div>
+
+                <div id="payment-form" class="card hidden">
+                    <h3>Add / Edit Withdrawal Method</h3>
+                    <input type="hidden" id="payment-doc-id">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div>
+                            <label>Method Name</label>
+                            <input type="text" id="payment-name" placeholder="e.g. Free Fire Diamonds, Robux">
+                        </div>
+                        <div>
+                            <label>Category Type</label>
+                            <select id="payment-type" style="width: 100%; padding: 8px; border-radius: 6px; background: #222; color: #fff; border: 1px solid #444;">
+                                <option value="game">Gaming Currency / Item</option>
+                                <option value="giftcard">Digital Gift Card</option>
+                                <option value="wallet">Direct Cash / UPI</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Icon Style</label>
+                            <select id="payment-icon" style="width: 100%; padding: 8px; border-radius: 6px; background: #222; color: #fff; border: 1px solid #444;">
+                                <option value="fire">💎 Fire / Diamond (Free Fire)</option>
+                                <option value="robux">🪙 Robux Coin</option>
+                                <option value="blox">🍎 Blox Fruit</option>
+                                <option value="play">🎁 Google Play</option>
+                                <option value="upi">⚡ UPI Instant</option>
+                                <option value="paytm">📱 Paytm Wallet</option>
+                                <option value="card">💳 General Card</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Minimum Amount (₹) (1000 Coins = ₹10)</label>
+                            <input type="number" id="payment-min" placeholder="10" value="10">
+                        </div>
+                        <div>
+                            <label>Input Field Placeholder for User</label>
+                            <input type="text" id="payment-placeholder" placeholder="e.g. Enter Free Fire Player UID">
+                        </div>
+                        <div>
+                            <label>Short Description</label>
+                            <input type="text" id="payment-desc" placeholder="e.g. Instant Free Fire Diamonds Top-up">
+                        </div>
+                        <div>
+                            <label>Badge Text</label>
+                            <input type="text" id="payment-badge" placeholder="e.g. POPULAR, HOT, INSTANT">
+                        </div>
+                        <div style="display: flex; align-items: center; margin-top: 20px;">
+                            <label><input type="checkbox" id="payment-active" checked> Is Active in User App?</label>
+                        </div>
+                    </div>
+                    <div style="margin-top: 15px;">
+                        <button class="success" onclick="savePaymentMethod()">Save Method</button>
+                        <button class="danger" onclick="hidePaymentForm()">Cancel</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Method</th>
+                                <th>Category</th>
+                                <th>Min Withdraw (₹)</th>
+                                <th>Placeholder / Requirement</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="payments-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- COUPONS -->
+            <div id="coupons" class="section">
+                <div class="header">
+                    <h2>Promo & Coupon Codes</h2>
+                    <div>
+                        <button class="success" onclick="showCouponForm()">+ Create New Coupon</button>
+                    </div>
+                </div>
+
+                <!-- Quick Presets -->
+                <div class="card" style="margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+                    <strong style="margin-right: 10px;">Quick Create:</strong>
+                    <button style="background: #e65100; color: white;" onclick="quickCreateCoupon('WELCOME100', 100, 0, 'Welcome gift bonus for all users')">🎁 WELCOME100 (+100)</button>
+                    <button style="background: #2e7d32; color: white;" onclick="quickCreateCoupon('BONUS500', 500, 100, 'Limited 500 coins special drop')">🔥 BONUS500 (+500)</button>
+                    <button style="background: #651FFF; color: white;" onclick="quickCreateCoupon('MEGA1000', 1000, 50, 'Exclusive 1000 coins drop')">⚡ MEGA1000 (+1000)</button>
+                    <button style="background: #0288d1; color: white;" onclick="quickCreateCoupon('TELEGRAM200', 200, 200, 'Community channel promo')">✈️ TELEGRAM200 (+200)</button>
+                </div>
+
+                <!-- Create Coupon Form -->
+                <div id="coupon-form" class="card hidden">
+                    <h3>Create New Coupon Code</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div>
+                            <label>Coupon Code (Letters & Numbers)</label>
+                            <input type="text" id="coupon-code" placeholder="e.g. WELCOME100, BONUS500" style="text-transform: uppercase;">
+                        </div>
+                        <div>
+                            <label>Reward (Coins Amount)</label>
+                            <input type="number" id="coupon-reward" placeholder="e.g. 500" value="100">
+                        </div>
+                        <div>
+                            <label>Max Usage Limit (0 for Unlimited)</label>
+                            <input type="number" id="coupon-max-uses" placeholder="0 = No limit" value="0">
+                        </div>
+                        <div>
+                            <label>Description / Note for Users</label>
+                            <input type="text" id="coupon-desc" placeholder="e.g. Special Telegram Drop / Weekend Bonus">
+                        </div>
+                        <div style="display: flex; align-items: center; margin-top: 15px;">
+                            <label><input type="checkbox" id="coupon-active" checked> Is Active & Redeemable?</label>
+                        </div>
+                    </div>
+                    <div style="margin-top: 15px;">
+                        <button class="success" onclick="saveCoupon()">Save & Activate Coupon</button>
+                        <button class="danger" onclick="hideCouponForm()">Cancel</button>
+                    </div>
+                </div>
+
+                <div class="card" style="overflow-x: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Coupon Code</th>
+                                <th>Reward</th>
+                                <th>Claims / Limit</th>
+                                <th>Description</th>
+                                <th>Created</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="coupons-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- NOTIFICATIONS -->
+            <div id="notifications" class="section">
+                <h2>Push Notifications</h2>
+                <div class="card">
+                    <div class="form-group">
+                        <label>Notification Title</label>
+                        <input type="text" id="notif-title" placeholder="Title">
+                    </div>
+                    <div class="form-group">
+                        <label>Message Body</label>
+                        <textarea id="notif-body" rows="3" placeholder="Message"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Image URL (Optional)</label>
+                        <input type="text" id="notif-image" placeholder="https://example.com/image.png">
+                    </div>
+                    <button onclick="sendNotification()">Send Notification</button>
+                </div>
+                <h3>Recent Notifications</h3>
+                <div class="card">
+                    <table>
+                        <thead>
+                            <tr><th>Title</th><th>Message</th><th>Date</th><th>Action</th></tr>
+                        </thead>
+                        <tbody id="notifs-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Use the firebase config output from your app's setup or remote_config
+        
+        const config = {
+            apiKey: "AIzaSyAJHPuwqQx_rIzU6Q39UjSeeru5w8vSHys",
+            authDomain: "task-earn-61241.firebaseapp.com",
+            projectId: "task-earn-61241",
+            storageBucket: "task-earn-61241.firebasestorage.app",
+            messagingSenderId: "462975445825",
+            appId: "1:462975445825:android:2d2330781b6b30f2dccfc0"
+        };
+        firebase.initializeApp(config);
+        window.db = firebase.firestore();
+        window.auth = firebase.auth();
+        checkAuth();
+
+
+        function checkAuth() {
+            auth.onAuthStateChanged(user => {
+                if(user) {
+                    document.getElementById('auth-screen').style.display = 'none';
+                    document.getElementById('app-screen').style.display = 'flex';
+                    document.getElementById('app-screen').classList.remove('hidden');
+                    initDashboard();
+                } else {
+                    document.getElementById('auth-screen').style.display = 'flex';
+                    document.getElementById('app-screen').style.display = 'none';
+                }
+            });
+        }
+
+        
+        function register() {
+            const e = document.getElementById('email').value;
+            const p = document.getElementById('password').value;
+            auth.createUserWithEmailAndPassword(e, p).catch(err => {
+                document.getElementById('auth-error').innerText = err.message;
+            });
+        }
+
+        function login() {
+            const e = document.getElementById('email').value;
+            const p = document.getElementById('password').value;
+            auth.signInWithEmailAndPassword(e, p).catch(err => {
+                document.getElementById('auth-error').innerText = err.message;
+            });
+        }
+
+        function logout() { auth.signOut(); }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.section').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            document.getElementById(tab).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function initDashboard() {
+            // Dashboard Stats
+            db.collection('users').onSnapshot(snap => {
+                document.getElementById('stat-users').innerText = snap.size;
+                loadUsers(snap);
+            });
+            db.collection('withdraw_requests').onSnapshot(snap => {
+                let pending = 0;
+                let success = 0;
+                let money = 0;
+                snap.forEach(doc => {
+                    const data = doc.data();
+                    if(data.status === 'pending') pending++;
+                    if(data.status === 'approved') {
+                        success++;
+                        money += data.rupees || 0;
+                    }
+                });
+                document.getElementById('stat-pending').innerText = pending;
+                document.getElementById('stat-success').innerText = success;
+                document.getElementById('stat-money').innerText = money;
+                loadWithdrawals(snap);
+            });
+
+            // Settings
+            db.collection('settings').doc('config').onSnapshot(doc => {
+                if(doc.exists) {
+                    const d = doc.data();
+                    document.getElementById('cfg-daily').value = d.daily_bonus || 100;
+                    document.getElementById('cfg-ref-referrer').value = d.referral_referrer || 5000;
+                    document.getElementById('cfg-ref-referee').value = d.referral_referee || 100;
+                    document.getElementById('cfg-streak').value = (d.daily_streak_coins || [10,20,30,40,50,60,100]).join(',');
+                    document.getElementById('cfg-spin-reward').value = d.spin_reward || 10;
+                    document.getElementById('cfg-spin-limit').value = d.spin_limit || 10;
+                    document.getElementById('cfg-scratch-reward').value = d.scratch_reward || 15;
+                    document.getElementById('cfg-scratch-limit').value = d.scratch_limit || 10;
+                    document.getElementById('cfg-video-reward').value = d.video_reward || 20;
+                    document.getElementById('cfg-video-limit').value = d.video_limit || 10;
+                    document.getElementById('cfg-rate').value = d.rate || 100;
+                    document.getElementById('cfg-telegram').value = d.telegram_link || "";
+                    document.getElementById('cfg-youtube').value = d.youtube_link || "";
+                    document.getElementById('cfg-instagram').value = d.instagram_link || "";
+                    document.getElementById('cfg-ads-enabled').checked = d.ads_enabled !== false;
+                    document.getElementById('cfg-unity-enabled').checked = d.unity_ads_enabled !== false;
+                    document.getElementById('cfg-admob-enabled').checked = d.admob_ads_enabled === true;
+                }
+            });
+
+            
+            // Banners
+            db.collection('banners').onSnapshot(snap => {
+                const tbody = document.getElementById('banners-body');
+                tbody.innerHTML = '';
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    tbody.innerHTML += `<tr>
+                        <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${d.imageUrl}</td>
+                        <td>${d.link || '-'}</td>
+                        <td><button class="danger" onclick="deleteDoc('banners','${doc.id}')">Delete</button></td>
+                    </tr>`;
+                });
+            });
+
+            // Offers
+            db.collection('offers').onSnapshot(snap => {
+                const tbody = document.getElementById('offers-body');
+                tbody.innerHTML = '';
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    tbody.innerHTML += `<tr>
+                        <td>${d.title}</td><td>${d.url}</td><td>${d.reward}</td><td>${d.timer}s</td>
+                        <td><button class="danger" onclick="deleteDoc('offers','${doc.id}')">Delete</button></td>
+                    </tr>`;
+                });
+            });
+
+            // Payment Methods
+            db.collection('payment_methods').onSnapshot(snap => {
+                const tbody = document.getElementById('payments-body');
+                tbody.innerHTML = '';
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    const iconEmoji = d.icon === 'fire' ? '💎' : (d.icon === 'robux' ? '🪙' : (d.icon === 'blox' ? '🍎' : (d.icon === 'play' ? '🎁' : (d.icon === 'upi' ? '⚡' : '📱'))));
+                    const badgeHtml = d.badge ? `<span class="badge approved" style="font-size:10px;margin-left:5px;">${d.badge}</span>` : '';
+                    tbody.innerHTML += `<tr>
+                        <td><strong>${iconEmoji} ${d.name}</strong>${badgeHtml}</td>
+                        <td><span class="badge pending">${(d.type || 'giftcard').toUpperCase()}</span></td>
+                        <td>₹${d.minimumAmount || 10} <span style="color:#888;font-size:11px;">(${((d.minimumAmount||10)*100)} Coins)</span></td>
+                        <td><small style="color:#aaa;">${d.placeholder || d.description || '-'}</small></td>
+                        <td><span class="badge ${d.isActive ? 'approved' : 'rejected'}">${d.isActive ? 'ACTIVE':'INACTIVE'}</span></td>
+                        <td>
+                            <button class="${d.isActive ? 'danger' : 'success'}" onclick="togglePaymentActive('${doc.id}', ${d.isActive})">${d.isActive ? 'Deactivate' : 'Activate'}</button>
+                            <button class="danger" onclick="deleteDoc('payment_methods','${doc.id}')">Delete</button>
+                        </td>
+                    </tr>`;
+                });
+            });
+
+            // Coupons
+            db.collection('coupons').onSnapshot(snap => {
+                const statEl = document.getElementById('stat-coupons');
+                if(statEl) statEl.innerText = snap.size;
+
+                const tbody = document.getElementById('coupons-body');
+                tbody.innerHTML = '';
+                if(snap.empty) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;padding:20px;">No coupon codes created yet. Click "+ Create New Coupon" or use Quick Create above!</td></tr>';
+                    return;
+                }
+                const sorted = [];
+                snap.forEach(d => sorted.push({ id: d.id, ...d.data() }));
+                sorted.sort((a,b) => (b.createdAt || 0) - (a.createdAt || 0)).forEach(d => {
+                    const maxText = (d.maxUses && d.maxUses > 0) ? `${d.usedCount || 0} / ${d.maxUses}` : `${d.usedCount || 0} / ∞ (Unlimited)`;
+                    const isLimitReached = (d.maxUses && d.maxUses > 0 && (d.usedCount || 0) >= d.maxUses);
+                    const statusBadge = !d.isActive ? '<span class="badge rejected">INACTIVE</span>' : (isLimitReached ? '<span class="badge pending">EXHAUSTED</span>' : '<span class="badge approved">ACTIVE</span>');
+                    const createdDate = d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '-';
+
+                    tbody.innerHTML += `<tr>
+                        <td>
+                            <span style="background:#262000;color:#ffeb3b;padding:4px 8px;border-radius:6px;font-family:monospace;font-weight:bold;letter-spacing:1px;border:1px solid #ffd600;">
+                                ${d.code || d.id}
+                            </span>
+                        </td>
+                        <td><strong style="color:#00e676;">+${d.reward || 0}</strong> Coins</td>
+                        <td>${maxText}</td>
+                        <td style="color:#aaa;max-width:200px;font-size:12px;">${d.description || '-'}</td>
+                        <td style="font-size:12px;color:#888;">${createdDate}</td>
+                        <td>${statusBadge}</td>
+                        <td>
+                            <button class="${d.isActive ? 'danger' : 'success'}" onclick="toggleCouponActive('${d.id}', ${d.isActive})">${d.isActive ? 'Deactivate' : 'Activate'}</button>
+                            <button class="danger" onclick="deleteCoupon('${d.id}')">Delete</button>
+                        </td>
+                    </tr>`;
+                });
+            });
+
+            // Notifications
+            db.collection('notifications').orderBy('timestamp', 'desc').limit(10).onSnapshot(snap => {
+                const tbody = document.getElementById('notifs-body');
+                tbody.innerHTML = '';
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    tbody.innerHTML += `<tr><td>${d.title}</td><td>${d.message || d.body}</td><td>${new Date(d.timestamp).toLocaleString()}</td><td><button class="danger" onclick="deleteDoc('notifications', '${doc.id}')">Delete</button></td></tr>`;
+                });
+            });
+        }
+
+        function loadUsers(snap) {
+            const tbody = document.getElementById('users-body');
+            tbody.innerHTML = '';
+            let count = 0;
+            snap.forEach(doc => {
+                if(count > 100) return; // Limit view
+                const d = doc.data();
+                const blocked = d.isBlocked === true;
+                tbody.innerHTML += `<tr>
+                    <td style="font-size:12px;">${d.email}<br><span style="color:#666">${doc.id}</span></td>
+                    <td>${d.name || '-'}</td>
+                    <td>${d.balance || 0}</td>
+                    <td>${blocked ? '<span class="badge rejected">BLOCKED</span>' : '<span class="badge approved">ACTIVE</span>'}</td>
+                    <td>
+                        <button onclick="promptBalance('${doc.id}', ${d.balance||0})">Edit Bal</button>
+                        <button class="${blocked?'success':'danger'}" onclick="toggleBlock('${doc.id}', ${blocked})">${blocked?'Unblock':'Block'}</button>
+                    </td>
+                </tr>`;
+                count++;
+            });
+        }
+
+        function loadWithdrawals(snap) {
+            const tbody = document.getElementById('withdrawals-body');
+            tbody.innerHTML = '';
+            const sorted = [];
+            snap.forEach(d => sorted.push({id: d.id, ...d.data()}));
+            sorted.sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 100).forEach(data => {
+                const badgeClass = data.status === 'pending' ? 'pending' : (data.status === 'approved' ? 'approved' : 'rejected');
+                const userDisplay = data.userName ? `<strong>${data.userName}</strong><br><span style="color:#888;font-size:11px;">${data.userEmail || data.userId}</span>` : (data.userEmail ? `<strong>${data.userEmail}</strong><br><span style="color:#888;font-size:10px;">${data.userId}</span>` : `<span style="font-size:11px;">${data.userId}</span>`);
+                tbody.innerHTML += `<tr>
+                    <td>${userDisplay}</td>
+                    <td><strong>${data.method}</strong></td>
+                    <td style="color:#ffeb3b;font-weight:bold;">${data.details}</td>
+                    <td>${data.coins} Coins</td>
+                    <td>₹${data.rupees}</td>
+                    <td><span class="badge ${badgeClass}">${(data.status || 'PENDING').toUpperCase()}</span></td>
+                    <td>
+                        ${data.status === 'pending' ? `
+                            <button class="success" onclick="updateWithdrawal('${data.id}', 'approved', '${data.userId}', ${data.coins})">Approve</button>
+                            <button class="danger" onclick="updateWithdrawal('${data.id}', 'rejected', '${data.userId}', ${data.coins})">Reject</button>
+                        ` : '-'}
+                    </td>
+                </tr>`;
+            });
+        }
+
+        function promptBalance(uid, bal) {
+            const newBal = prompt("Enter new balance:", bal);
+            if(newBal !== null) db.collection('users').doc(uid).update({balance: parseInt(newBal)});
+        }
+        
+        function toggleBlock(uid, isBlocked) {
+            db.collection('users').doc(uid).update({isBlocked: !isBlocked});
+        }
+
+        function updateWithdrawal(reqId, status, userId, coins) {
+            if(confirm(`Are you sure you want to ${status} this?`)) {
+                const batch = db.batch();
+                batch.update(db.collection('withdraw_requests').doc(reqId), { status: status });
+                if(status === 'rejected') {
+                    batch.update(db.collection('users').doc(userId), {
+                        balance: firebase.firestore.FieldValue.increment(coins)
+                    });
+                }
+                
+                const notifRef = db.collection('notifications').doc();
+                batch.set(notifRef, {
+                    title: "Withdrawal " + (status === 'approved' ? "Approved" : "Rejected"),
+                    message: `Your withdrawal request for ${coins} coins has been ${status}.`,
+                    icon: "bank",
+                    timestamp: Date.now(),
+                    userId: userId
+                });
+                
+                batch.commit().then(() => alert("Updated successfully"));
+            }
+        }
+
+        function saveSettings() {
+            db.collection('settings').doc('config').set({
+                daily_bonus: (parseInt(document.getElementById('cfg-daily').value) || 0),
+                referral_referrer: (parseInt(document.getElementById('cfg-ref-referrer').value) || 0),
+                referral_referee: (parseInt(document.getElementById('cfg-ref-referee').value) || 0),
+                daily_streak_coins: document.getElementById('cfg-streak').value.split(',').map(n => parseInt(n.trim()) || 0),
+                spin_reward: (parseInt(document.getElementById('cfg-spin-reward').value) || 0),
+                spin_limit: (parseInt(document.getElementById('cfg-spin-limit').value) || 0),
+                scratch_reward: (parseInt(document.getElementById('cfg-scratch-reward').value) || 0),
+                scratch_limit: (parseInt(document.getElementById('cfg-scratch-limit').value) || 0),
+                video_reward: (parseInt(document.getElementById('cfg-video-reward').value) || 0),
+                video_limit: (parseInt(document.getElementById('cfg-video-limit').value) || 0),
+                rate: (parseInt(document.getElementById('cfg-rate').value) || 100),
+                telegram_link: document.getElementById('cfg-telegram').value,
+                youtube_link: document.getElementById('cfg-youtube').value,
+                instagram_link: document.getElementById('cfg-instagram').value,
+                ads_enabled: document.getElementById('cfg-ads-enabled').checked,
+                unity_ads_enabled: document.getElementById('cfg-unity-enabled').checked,
+                admob_ads_enabled: document.getElementById('cfg-admob-enabled').checked
+            }, {merge: true}).then(() => alert("Saved!"));
+        }
+
+        function showBannerForm() { document.getElementById('banner-form').classList.remove('hidden'); }
+        function hideBannerForm() { document.getElementById('banner-form').classList.add('hidden'); }
+        function saveBanner() {
+            db.collection('banners').add({
+                imageUrl: document.getElementById('banner-image').value,
+                link: document.getElementById('banner-link').value,
+                timestamp: Date.now()
+            }).then(() => {
+                hideBannerForm();
+                document.getElementById('banner-image').value = '';
+                document.getElementById('banner-link').value = '';
+            });
+        }
+
+        function showOfferForm() { document.getElementById('offer-form').classList.remove('hidden'); }
+        function hideOfferForm() { document.getElementById('offer-form').classList.add('hidden'); }
+        function saveOffer() {
+            db.collection('offers').add({
+                title: document.getElementById('offer-title').value,
+                description: document.getElementById('offer-desc').value,
+                url: document.getElementById('offer-url').value,
+                reward: (parseInt(document.getElementById('offer-reward').value) || 0),
+                timer: (parseInt(document.getElementById('offer-timer').value) || 0),
+                timestamp: Date.now()
+            });
+            hideOfferForm();
+        }
+
+        function togglePaymentActive(id, cur) {
+            db.collection('payment_methods').doc(id).update({ isActive: !cur });
+        }
+
+        function showPaymentForm() { document.getElementById('payment-form').classList.remove('hidden'); }
+        function hidePaymentForm() { document.getElementById('payment-form').classList.add('hidden'); }
+        
+        function savePaymentMethod() {
+            const name = document.getElementById('payment-name').value.trim();
+            if(!name) { alert("Please enter method name"); return; }
+            const docId = document.getElementById('payment-doc-id').value.trim() || name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+            const data = {
+                id: docId,
+                name: name,
+                type: document.getElementById('payment-type').value,
+                icon: document.getElementById('payment-icon').value,
+                minimumAmount: parseInt(document.getElementById('payment-min').value) || 10,
+                placeholder: document.getElementById('payment-placeholder').value.trim(),
+                description: document.getElementById('payment-desc').value.trim(),
+                badge: document.getElementById('payment-badge').value.trim(),
+                isActive: document.getElementById('payment-active').checked
+            };
+            db.collection('payment_methods').doc(docId).set(data).then(() => {
+                hidePaymentForm();
+                alert("Saved method: " + name);
+            }).catch(e => alert("Error: " + e.message));
+        }
+
+        function quickAddGiftCard(type) {
+            const presets = {
+                free_fire: {
+                    id: 'free_fire',
+                    name: 'Free Fire Diamonds',
+                    minimumAmount: 10,
+                    type: 'game',
+                    icon: 'fire',
+                    placeholder: 'Enter Free Fire Player UID',
+                    description: 'Instant Free Fire Diamonds Top-up',
+                    badge: 'POPULAR',
+                    isActive: true
+                },
+                robux: {
+                    id: 'robux',
+                    name: 'Robux (Roblox)',
+                    minimumAmount: 10,
+                    type: 'game',
+                    icon: 'robux',
+                    placeholder: 'Enter Roblox Username',
+                    description: 'Direct Robux or Gift Code',
+                    badge: 'HOT',
+                    isActive: true
+                },
+                blox_fruits: {
+                    id: 'blox_fruits',
+                    name: 'Blox Fruits',
+                    minimumAmount: 10,
+                    type: 'game',
+                    icon: 'blox',
+                    placeholder: 'Enter Roblox Username / Gamer ID',
+                    description: 'Permanent Fruit / Gamepass Gift',
+                    badge: 'TRENDING',
+                    isActive: true
+                },
+                google_play: {
+                    id: 'google_play',
+                    name: 'Google Play Code',
+                    minimumAmount: 10,
+                    type: 'giftcard',
+                    icon: 'play',
+                    placeholder: 'Enter Email Address for Code',
+                    description: 'Play Store Redeem Code',
+                    badge: 'INSTANT',
+                    isActive: true
+                },
+                upi: {
+                    id: 'upi',
+                    name: 'UPI Transfer',
+                    minimumAmount: 10,
+                    type: 'wallet',
+                    icon: 'upi',
+                    placeholder: 'Enter UPI ID (e.g. mobile@upi)',
+                    description: 'Direct Bank Transfer via UPI',
+                    badge: 'INSTANT',
+                    isActive: true
+                },
+                paytm: {
+                    id: 'paytm',
+                    name: 'Paytm Cash',
+                    minimumAmount: 10,
+                    type: 'wallet',
+                    icon: 'paytm',
+                    placeholder: 'Enter 10-digit Paytm Mobile Number',
+                    description: 'Instant Paytm Wallet Cash',
+                    badge: 'FAST',
+                    isActive: true
+                }
+            };
+            const item = presets[type];
+            if(item) {
+                db.collection('payment_methods').doc(item.id).set(item).then(() => {
+                    alert(`${item.name} added successfully! It is now active in the user app.`);
+                }).catch(err => alert("Error: " + err.message));
+            }
+        }
+
+        function seedAllPaymentMethods() {
+            if(confirm("This will add or reset all 6 default gift cards (Free Fire, Robux, Blox Fruits, Google Play, UPI, Paytm). Continue?")) {
+                ['free_fire', 'robux', 'blox_fruits', 'google_play', 'upi', 'paytm'].forEach(k => quickAddGiftCard(k));
+            }
+        }
+
+        function sendNotification() {
+            db.collection('notifications').add({
+                title: document.getElementById('notif-title').value,
+                message: document.getElementById('notif-body').value,
+                imageUrl: document.getElementById('notif-image').value,
+                timestamp: Date.now()
+            }).then(() => alert("Notification broadcasted!"));
+        }
+
+        // Coupon Functions
+        function showCouponForm() {
+            document.getElementById('coupon-form').classList.remove('hidden');
+        }
+
+        function hideCouponForm() {
+            document.getElementById('coupon-form').classList.add('hidden');
+        }
+
+        function saveCoupon() {
+            const rawCode = document.getElementById('coupon-code').value.trim();
+            if(!rawCode) { alert("Please enter a coupon code"); return; }
+            const code = rawCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const reward = parseInt(document.getElementById('coupon-reward').value) || 0;
+            if(reward <= 0) { alert("Coins reward must be greater than 0"); return; }
+            const maxUses = parseInt(document.getElementById('coupon-max-uses').value) || 0;
+            const desc = document.getElementById('coupon-desc').value.trim();
+            const isActive = document.getElementById('coupon-active').checked;
+
+            db.collection('coupons').doc(code).set({
+                id: code,
+                code: code,
+                reward: reward,
+                maxUses: maxUses,
+                usedCount: 0,
+                description: desc || ("Promo Code " + code),
+                isActive: isActive,
+                createdAt: Date.now()
+            }, { merge: true }).then(() => {
+                hideCouponForm();
+                document.getElementById('coupon-code').value = '';
+                document.getElementById('coupon-desc').value = '';
+                alert("Coupon '" + code + "' created and activated successfully! Users can now redeem it in the Earn page.");
+            }).catch(err => alert("Error: " + err.message));
+        }
+
+        function quickCreateCoupon(code, reward, maxUses, desc) {
+            db.collection('coupons').doc(code).set({
+                id: code,
+                code: code,
+                reward: reward,
+                maxUses: maxUses,
+                usedCount: 0,
+                description: desc,
+                isActive: true,
+                createdAt: Date.now()
+            }, { merge: true }).then(() => {
+                alert("Coupon '" + code + "' (+ " + reward + " Coins) created successfully!");
+            }).catch(err => alert("Error: " + err.message));
+        }
+
+        function toggleCouponActive(code, cur) {
+            db.collection('coupons').doc(code).update({ isActive: !cur });
+        }
+
+        function deleteCoupon(code) {
+            if(confirm("Are you sure you want to delete coupon '" + code + "'?")) {
+                db.collection('coupons').doc(code).delete();
+            }
+        }
+
+        function deleteDoc(col, id) { if(confirm("Delete?")) db.collection(col).doc(id).delete(); }
+    </script>
+</body>
+</html>
